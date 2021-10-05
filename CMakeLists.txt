@@ -45,7 +45,7 @@ _add_nvpro_core_lib()
 #####################################################################################
 # Resources
 #
-download_files(FILENAMES worldcar_parts.zip EXTRACT)
+download_files(FILENAMES worldcar_parts.zip EXTRACT NOINSTALL)
 
 #####################################################################################
 # Source files for this project
@@ -108,4 +108,6 @@ _finalize_target( ${EXENAME} )
 LIST(APPEND GLSL_FILES "common.h")
 install(FILES ${GLSL_FILES} CONFIGURATIONS Release DESTINATION "bin_${ARCH}/GLSL_${PROJNAME}")
 install(FILES ${GLSL_FILES} CONFIGURATIONS Debug DESTINATION "bin_${ARCH}_debug/GLSL_${PROJNAME}")
+install(FILES ${DOWNLOAD_TARGET_DIR}/worldcar_parts.csf CONFIGURATIONS Release DESTINATION "bin_${ARCH}/media")
+install(FILES ${DOWNLOAD_TARGET_DIR}/worldcar_parts.csf  CONFIGURATIONS Debug DESTINATION "bin_${ARCH}_debug/media")
 
