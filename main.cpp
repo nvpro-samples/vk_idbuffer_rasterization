@@ -467,8 +467,8 @@ void Sample::processUI(int width, int height, double time)
 
       //ImGui::ProgressBar(cpuTimeF / maxTimeF, ImVec2(0.0f, 0.0f));
       ImGui::Separator();
-      ImGui::Text(" triangle ids:  %9d KB\n", m_scene.m_triangleIdsSize / 1024);
-      ImGui::Text(" part ids:      %9d KB\n", m_scene.m_partIdsSize / 1024);
+      ImGui::Text(" triangle ids:  %9ld KB\n", m_scene.m_triangleIdsSize / 1024);
+      ImGui::Text(" part ids:      %9ld KB\n", m_scene.m_partIdsSize / 1024);
       ImGui::Text(" draw calls:    %9d\n", m_renderStats.drawCalls);
       ImGui::Text(" draw tris:     %9d\n", m_renderStats.drawTriangles);
     }
