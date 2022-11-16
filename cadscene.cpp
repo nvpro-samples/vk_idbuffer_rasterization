@@ -159,7 +159,6 @@ bool CadScene::loadCSF(const char* filename, int clones, int cloneaxis)
       vertices[i].position[0] = csfgeom->vertex[3 * i + 0];
       vertices[i].position[1] = csfgeom->vertex[3 * i + 1];
       vertices[i].position[2] = csfgeom->vertex[3 * i + 2];
-      vertices[i].position[3] = 1.0f;
 
       nvmath::vec3f normal;
       if(csfgeom->normal)
@@ -177,7 +176,7 @@ bool CadScene::loadCSF(const char* filename, int clones, int cloneaxis)
       vertices[i].normalOctX = std::min(32767, std::max(-32767, int32_t(packed.x * 32767.0f)));
       vertices[i].normalOctY = std::min(32767, std::max(-32767, int32_t(packed.y * 32767.0f)));
 
-      m_geometryBboxes[n].merge(vertices[i].position);
+      m_geometryBboxes[n].merge(nvmath::vec4f(vertices[i].position));
     }
 
     geom.vboData = vertices;
