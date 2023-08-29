@@ -60,6 +60,10 @@ layout(location=0) in Interpolants {
   flat uint partIndex;
 } IN;
 
+// we are using an atomic for the raytest, which means earlyZ would be skipped
+// but that is not our intent
+layout(early_fragment_tests) in;
+
 ///////////////////////////////////////////////////////////
 // Output
 

@@ -52,7 +52,7 @@ vec4 shading(uint partIndex)
   color += mix(side.diffuse, unpackUnorm4x8(murmurHash(partIndex)), scene.partWeight) * ldot;
   color += side.specular * pow(max(0,dot(normal,halfDir)),16);
   
-  
+#if 1
   // simple ray selection highlight:
   
   // if this fragment coordinate matches the mouse cursor
@@ -76,6 +76,7 @@ vec4 shading(uint partIndex)
   {
     color = mix(color, vec4(1) - color, sin(scene.time * 10) * 0.5 + 0.5);
   }
-  
+#endif
+
   return color;
 }

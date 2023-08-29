@@ -33,6 +33,7 @@
 #include <algorithm>
 
 #include "renderer.hpp"
+#include "resources_vk.hpp"
 
 namespace idraster {
 int const SAMPLE_SIZE_WIDTH(1024);
@@ -297,6 +298,7 @@ void Sample::end()
   {
     m_resources->deinit();
   }
+  ResourcesVK::deinitImGui(m_context);
 }
 
 
@@ -314,6 +316,7 @@ bool Sample::begin()
   m_resources = NULL;
 
   ImGuiH::Init(m_windowState.m_winSize[0], m_windowState.m_winSize[1], this);
+  ResourcesVK::initImGui(m_context);
 
   bool validated(true);
   validated = validated && initProgram();

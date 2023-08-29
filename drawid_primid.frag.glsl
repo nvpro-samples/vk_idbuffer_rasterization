@@ -73,6 +73,9 @@ layout(location=2) in Id {
   flat uint idsOffset;
 } IN_ID;
 
+// we are using an atomic for the raytest, which means earlyZ would be skipped
+// but that is not our intent
+layout(early_fragment_tests) in;
 
 ///////////////////////////////////////////////////////////
 // Output

@@ -128,7 +128,7 @@ void CadSceneVK::init(const CadScene& cadscene, nvvk::ResourceAllocator* resAllo
 
     LOGI("Size of vertex data: %11" PRId64 "\n", uint64_t(m_geometryMem.getVertexSize()));
     LOGI("Size of index data:  %11" PRId64 "\n", uint64_t(m_geometryMem.getIndexSize()));
-    LOGI("Size of ids data:  %11" PRId64 "\n", uint64_t(m_geometryMem.getIdSize()));
+    LOGI("Size of ids data:    %11" PRId64 "\n", uint64_t(m_geometryMem.getIdSize()));
     LOGI("Size of data:        %11" PRId64 "\n",
          uint64_t(m_geometryMem.getVertexSize() + m_geometryMem.getIndexSize() + m_geometryMem.getIdSize()));
     LOGI("Chunks:              %11d\n", uint32_t(m_geometryMem.getChunkCount()));
