@@ -22,13 +22,21 @@
 #ifndef CSFTHREADED_COMMON_H
 #define CSFTHREADED_COMMON_H
 
-#define VERTEX_POS_OCTNORMAL      0
+#define ATTRIB_VERTEX_POS_OCTNORMAL      0
+#define ATTRIB_BASEINSTANCE              1
+
+// Each binding is a set of vertex streams that share a common stride and instanceDivisor
+// Here we assume to have one packed AOS vertex type and the per-draw information (implemented 
+// via gl_BaseInstance technique)
+#define BINDING_PER_VERTEX               0
+#define BINDING_PER_INSTANCE             1
 
 // changing these orders may break a lot of things ;)
 #define DRAW_UBO_SCENE      0
 #define DRAW_SSBO_MATRIX    1
 #define DRAW_SSBO_MATERIAL  2
 #define DRAW_SSBO_RAY       3
+#define DRAW_SSBO_PER_DRAW  4
 
 #define ANIM_UBO              0
 #define ANIM_SSBO_MATRIXOUT   1
@@ -58,7 +66,14 @@
 
 #ifdef __cplusplus
 namespace idraster {
-  using namespace nvmath;
+  using namespace glm;
+
+#define BUFFER_REFERENCE(glslType, name) uint64_t name
+#else
+#define BUFFER_REFERENCE(glslType, name) glslType name
+layout(buffer_reference, buffer_reference_align=4) buffer readonly uints_in {
+  uint d[];
+};
 #endif
 
 struct SceneData {
@@ -116,11 +131,23 @@ struct AnimationData {
 
 struct DrawPushData
 {
-  uint     matrixIndex;
-  uint     _pad;
-  uint     materialIndex;
-  uint     uniquePartOffset;
-  uint64_t idsAddr;
+  // Common to all vertex shaders
+  uint matrixIndex;
+
+  uint flexible;
+
+  // Simple per-part fragment push constants for MODE_PER_DRAW_BASEINST
+  uint materialIndex;
+
+  // Added to the part ID when shading() so the same ID for different objects is
+  // a different color.
+  uint uniquePartOffset;
+
+  // Address bound contains different content per mode:
+  // - MODE_PER_TRI_ID*: trianglePartIds - per-triangle part IDs
+  // - MODE_PER_TRI_*BATCH_PART_SEARCH*: partTriCounts - per-part triangle counts
+  // - MODE_PER_TRI_*GLOBAL_PART_SEARCH*: partTriOffsets - running per-part triangle offsets
+  BUFFER_REFERENCE(uints_in, idsAddr);
 };
 
 #ifdef __cplusplus
@@ -144,7 +171,9 @@ uint murmurHash(uint idx)
     return h;
 }
 
-#endif
+
+
+#endif // __cplusplus 
 
 
 #endif

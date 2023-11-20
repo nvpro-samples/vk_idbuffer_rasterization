@@ -19,8 +19,9 @@
 
 
 #include "resources_vk.hpp"
-#include "backends/imgui_vk_extra.h"
+#include "imgui/backends/imgui_vk_extra.h"
 #include "nvh/nvprint.hpp"
+#include "vulkan/vulkan_core.h"
 #include <algorithm>
 
 namespace idraster {
@@ -734,9 +735,11 @@ void ResourcesVK::initPipes()
 
   m_gfxGen.createInfo.flags = m_gfxStatePipelineFlags;
   m_gfxGen.setDevice(m_device);
-  m_gfxState.addAttributeDescription(
-      nvvk::GraphicsPipelineState::makeVertexInputAttribute(VERTEX_POS_OCTNORMAL, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0));
-  m_gfxState.addBindingDescription(nvvk::GraphicsPipelineState::makeVertexInputBinding(0, sizeof(CadScene::Vertex)));
+  m_gfxState.addAttributeDescription(nvvk::GraphicsPipelineState::makeVertexInputAttribute(
+      ATTRIB_VERTEX_POS_OCTNORMAL, BINDING_PER_VERTEX, VK_FORMAT_R32G32B32A32_SFLOAT, 0));
+
+  m_gfxState.addBindingDescription(nvvk::GraphicsPipelineState::makeVertexInputBinding(BINDING_PER_VERTEX, sizeof(CadScene::Vertex),
+                                                                                       VK_VERTEX_INPUT_RATE_VERTEX));
   m_gfxState.inputAssemblyState.topology        = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
   m_gfxState.depthStencilState.depthTestEnable  = true;
   m_gfxState.depthStencilState.depthWriteEnable = true;

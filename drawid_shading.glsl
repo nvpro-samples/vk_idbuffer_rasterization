@@ -23,17 +23,24 @@ vec4 shading(uint partIndex)
   // To make it fully unique over all objects in the scene
   // we need to apply this offset
   // (otherwise every first part of any geometry will have the same index)
-  partIndex += PUSH.uniquePartOffset;
+  partIndex += getUniquePartOffset();
 
 #if COLORIZE_DRAWS
   MaterialSide side;
-  side.diffuse = unpackUnorm4x8(murmurHash(PUSH.materialIdx));
+  side.diffuse = unpackUnorm4x8(murmurHash(getMaterialIndex()));
+  side.diffuse = (vec4(dot(side.diffuse, vec4(1,1,1,0)) / 3.0) * 1.2  + side.diffuse) / 1.7f;
+  side.ambient = vec4(0.05);
+  side.emissive = vec4(0);
+  side.specular = vec4(0.5);
+#elif IGNORE_MATERIALS
+  MaterialSide side;
+  side.diffuse = unpackUnorm4x8(murmurHash(partIndex));
   side.diffuse = (vec4(dot(side.diffuse, vec4(1,1,1,0)) / 3.0) * 1.2  + side.diffuse) / 1.7f;
   side.ambient = vec4(0.05);
   side.emissive = vec4(0);
   side.specular = vec4(0.5);
 #else
-  MaterialSide side = materials[PUSH.materialIdx].sides[gl_FrontFacing ? 1 : 0];
+  MaterialSide side = materials[getMaterialIndex()].sides[gl_FrontFacing ? 1 : 0];
 #endif
 
   vec4 color = side.ambient + side.emissive;

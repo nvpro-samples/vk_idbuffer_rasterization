@@ -32,6 +32,14 @@ namespace idraster {
 class Renderer
 {
 public:
+
+    enum PerDrawIndexMode
+  {
+    PER_DRAW_PUSHCONSTANTS,
+    PER_DRAW_INDEX_BASEINSTANCE,
+    PER_DRAW_INDEX_ATTRIBUTE
+  };
+
   struct Stats
   {
     uint32_t drawCalls     = 0;
@@ -42,10 +50,19 @@ public:
   {
     uint32_t objectFrom;
     uint32_t objectNum;
-    bool     sorted        = true;
-    bool     passthrough   = true;
-    uint32_t searchBatch   = 16;
-    bool     colorizeDraws = false;
+    bool     sorted          = true;
+    bool     passthrough     = true;
+    bool     colorizeDraws   = false;
+    bool     ignoreMaterials = false;
+    uint32_t searchBatch = 16;
+
+    // MODE_PER_TRI_GLOBAL_PART_SEARCH_FS settings
+    int  globalNaryN       = 4;
+    int  globalNaryMin     = 64;
+    int  globalNaryMaxIter = 4;
+    bool globalSearchGuess = true;
+
+    PerDrawIndexMode perDrawParameterMode = PER_DRAW_PUSHCONSTANTS;
   };
 
   struct DrawItem

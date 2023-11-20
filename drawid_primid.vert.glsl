@@ -27,6 +27,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 
 #include "common.h"
+#include "per_draw_inputs.glsl"
 
 ///////////////////////////////////////////////////////////
 // Bindings
@@ -39,14 +40,9 @@ layout(set=0, binding=DRAW_SSBO_MATRIX, scalar) buffer matrixBuffer {
   MatrixData    matrices[];
 };
 
-layout(push_constant, scalar) uniform pushConstants {
-  uint matrixIndex;
-} PUSH;
-
 ///////////////////////////////////////////////////////////
 // Input
-
-in layout(location=VERTEX_POS_OCTNORMAL)      vec4 inPosNormal;
+in layout(location = ATTRIB_VERTEX_POS_OCTNORMAL) vec4 inPosNormal;
 
 ///////////////////////////////////////////////////////////
 // Output
@@ -56,9 +52,11 @@ layout(location=0) out Interpolants {
   vec3 wNormal;
 } OUT;
 
+#ifdef USE_PUSHCONSTANTS
 layout(location=2) out Id {
   flat uint idsOffset;
 } OUT_ID;
+#endif
 
 ///////////////////////////////////////////////////////////
 
@@ -81,8 +79,8 @@ vec2 float32x3_to_oct(in vec3 v) {
 void main()
 {
   vec3 inNormal = oct_to_float32x3(unpackSnorm2x16(floatBitsToUint(inPosNormal.w)));
-  
-  MatrixData matrix = matrices[PUSH.matrixIndex];
+
+  MatrixData matrix = matrices[getMatrixIndex()];
 
   vec3 wPos     = (matrix.worldMatrix   * vec4(inPosNormal.xyz,1)).xyz;
   vec3 wNormal  = mat3(matrix.worldMatrixIT) * inNormal;
@@ -91,5 +89,9 @@ void main()
   OUT.wPos      = wPos;
   OUT.wNormal   = wNormal;
   
-  OUT_ID.idsOffset = gl_InstanceIndex;
+  #ifdef USE_PUSHCONSTANTS
+    OUT_ID.idsOffset = gl_InstanceIndex;
+  #else
+    OUT_DRAWID.drawId = getDrawId();
+  #endif
 }

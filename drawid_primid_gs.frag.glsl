@@ -28,6 +28,7 @@
 #extension GL_EXT_shader_atomic_int64 : enable
 
 #include "common.h"
+#include "per_draw_inputs.glsl"
 
 ///////////////////////////////////////////////////////////
 // Bindings
@@ -45,11 +46,6 @@ layout(set=0, binding=DRAW_SSBO_RAY, scalar) buffer coherent rayBuffer {
   RayData   ray;
 };
 
-layout(push_constant, scalar) uniform pushConstants {
-  layout(offset=8)
-  uint materialIdx;
-  uint uniquePartOffset;
-} PUSH;
 
 ///////////////////////////////////////////////////////////
 // Input

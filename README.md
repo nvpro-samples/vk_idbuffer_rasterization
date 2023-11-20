@@ -21,7 +21,7 @@ In this sample we showcase a few rendering techniques to get a per-part ID withi
 
 Typical UI operations:
 
-- `renderer` change between different techniques to render the partIDs
+- `renderer` change between different techniques to render the part IDs
 - `use geometry shader passthrough` affects renderers with the `gs` suffix and makes use of the `GL_NV_geometry_shader_passthrough` if supported
 - `search batch` the number of parts per drawcall to batch in the `search` renderers.
 - `part color weight` slider allows to blend between the individual part colors and the material color
@@ -100,16 +100,16 @@ While this costs a bit of extra memory, it tends to be the fastest variant, as w
   // similar as before we hijack the "baseInstance" value to get a cheap per-draw
   // value. This time we store the geometry's buffer offset into the `triangle partID buffer`.
   vkCmdDrawIndexed(cmd, geometry.indexCount, 1, geometry.firstIndex, geometry.firstVertex, 
-                        geometry.partIDsOffset);
+                        geometry.partTriCountsOffset);
 
 // fragment shader
   // lookup each triangle's partId
-  // "PUSH.partIds" is a pushconstant that contains the buffer_reference address 
-  //                for array that contains the partID per triangle.
+  // "PUSH.idsAddr" is a pushconstant that contains the buffer_reference address
+  //                for array that contains the part ID per triangle.
   // "IN_ID.idsOffset" is used a bit like "firstIndex" in a drawcall, it allows us 
-  //                   to store many object's worth of partIDs in the buffer.
+  //                   to store many parts worth of partTriCounts in the buffer.
   //                   It is piped through the vertex-shader as in the simple setup.
-  int partIndex = int(PUSH.partIds.d[gl_PrimitiveID + int(IN_ID.idsOffset)]);
+  int partIndex = int(PUSH.idsAddr.d[gl_PrimitiveID + int(IN_ID.idsOffset)]);
 
 ```
 
@@ -146,6 +146,9 @@ In our sample a value of 16 worked well.
 
 // fragment shader
 
+  // PUSH.idsAddr points to partTriCounts.
+  uints_in partTriCounts = PUSH.idsAddr;
+
   // the batch meta info that we get per-draw
   uint partOffset = IN_ID.idsOffset >> 8;
   uint partCount  = IN_ID.idsOffset & 0xFF;
@@ -158,13 +161,13 @@ In our sample a value of 16 worked well.
   for (int i = 0; i < SEARCH_COUNT; i++)
   {
     // for each part in the batch get number of triangles
-    // (we pad our partIds buffer at the end so that this hardcoded search window never
+    // (we pad our partTriCounts buffer at the end so that this hardcoded search window never
     //  creates out-of-memory access)
     
     // don't make this load part of a dynamic condition, so that the compiler
     // can batch-load all SEARCH_COUNT many loads in separate registers, which reduces
     // memory latency.
-    partTriangleCount = int(PUSH.partIds.d[partOffset + i]);
+    partTriangleCount = int(partTriCounts.d[partOffset + i]);
 
     // we hardcoded this loop in the shader hence we add the `(i < partCount)` condition
     // which is dynamic per batch

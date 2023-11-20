@@ -83,16 +83,18 @@ struct GeometryMemoryVK
     Index        chunkIndex;
     VkDeviceSize vboOffset;
     VkDeviceSize iboOffset;
-    VkDeviceSize triangleIdsOffset;
-    VkDeviceSize partIdsOffset;
+    VkDeviceSize trianglePartIdsOffset;
+    VkDeviceSize partTriCountsOffset;
+    VkDeviceSize triOffsetsOffset;
   };
 
   struct Chunk
   {
     ResBuffer vbo;
     ResBuffer ibo;
-    ResBuffer triangleIds;
-    ResBuffer partIds;
+    ResBuffer trianglePartIds;
+    ResBuffer partTriCounts;
+    ResBuffer partTriOffsets;
   };
 
   nvvk::ResourceAllocator* m_resAllocator;
@@ -100,7 +102,12 @@ struct GeometryMemoryVK
 
   void init(nvvk::ResourceAllocator* resAllocator, VkDeviceSize maxChunk);
   void deinit();
-  void alloc(VkDeviceSize vboSize, VkDeviceSize iboSize, VkDeviceSize triangleIdsSize, VkDeviceSize partIdsSize, Allocation& allocation);
+  void alloc(VkDeviceSize vboSize,
+             VkDeviceSize iboSize,
+             VkDeviceSize trianglePartIdsSize,
+             VkDeviceSize partTriCountsSize,
+             VkDeviceSize triOffsetsSize,
+             Allocation&  allocation);
   void finalize();
 
   const Chunk& getChunk(const Allocation& allocation) const { return m_chunks[allocation.chunkIndex]; }
@@ -132,8 +139,8 @@ struct GeometryMemoryVK
     VkDeviceSize size = 0;
     for(size_t i = 0; i < m_chunks.size(); i++)
     {
-      size += m_chunks[i].triangleIds.info.range;
-      size += m_chunks[i].partIds.info.range;
+      size += m_chunks[i].trianglePartIds.info.range;
+      size += m_chunks[i].partTriCounts.info.range;
     }
     return size;
   }
@@ -146,6 +153,7 @@ private:
   VkDeviceSize m_maxVboChunk;
   VkDeviceSize m_maxIboChunk;
   VkDeviceSize m_maxIdsChunk;
+  VkDeviceSize m_maxTriOffsetsChunk;
 
   Index getActiveIndex() { return (m_chunks.size() - 1); }
 
@@ -166,13 +174,15 @@ public:
 
     VkDescriptorBufferInfo vbo;
     VkDescriptorBufferInfo ibo;
-    VkDescriptorBufferInfo triangleIds;
-    VkDescriptorBufferInfo partIds;
+    VkDescriptorBufferInfo trianglePartIds;
+    VkDescriptorBufferInfo partTriCounts;
+    VkDescriptorBufferInfo partTriOffsets;
 
     VkDeviceAddress vboAddr;
     VkDeviceAddress iboAddr;
-    VkDeviceAddress triangleIdsAddr;
-    VkDeviceAddress partIdsAddr;
+    VkDeviceAddress trianglePartIdsAddr;
+    VkDeviceAddress partTriCountsAddr;
+    VkDeviceAddress partTriOffsetsAddr;
   };
 
   struct Buffers

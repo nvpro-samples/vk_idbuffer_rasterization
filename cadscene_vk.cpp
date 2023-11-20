@@ -37,9 +37,10 @@ void GeometryMemoryVK::init(nvvk::ResourceAllocator* resAllocator, VkDeviceSize 
   m_alignment    = 16;
   m_vboAlignment = 16;
 
-  m_maxVboChunk = maxChunk;
-  m_maxIboChunk = maxChunk;
-  m_maxIdsChunk = maxChunk;
+  m_maxVboChunk =        maxChunk;
+  m_maxIboChunk =        maxChunk;
+  m_maxIdsChunk =        maxChunk;
+  m_maxTriOffsetsChunk = maxChunk;
 }
 
 void GeometryMemoryVK::deinit()
@@ -49,23 +50,31 @@ void GeometryMemoryVK::deinit()
     Chunk& chunk = m_chunks[i];
     destroyResBuffer(*m_resAllocator, chunk.vbo);
     destroyResBuffer(*m_resAllocator, chunk.ibo);
-    destroyResBuffer(*m_resAllocator, chunk.triangleIds);
-    destroyResBuffer(*m_resAllocator, chunk.partIds);
+    destroyResBuffer(*m_resAllocator, chunk.trianglePartIds);
+    destroyResBuffer(*m_resAllocator, chunk.partTriCounts);
+    destroyResBuffer(*m_resAllocator, chunk.partTriOffsets);
   }
   m_chunks       = std::vector<Chunk>();
   m_resAllocator = nullptr;
 }
 
-void GeometryMemoryVK::alloc(VkDeviceSize vboSize, VkDeviceSize iboSize, VkDeviceSize triangleIdsSize, VkDeviceSize partIdsSize, Allocation& allocation)
+void GeometryMemoryVK::alloc(VkDeviceSize vboSize,
+                             VkDeviceSize iboSize,
+                             VkDeviceSize trianglePartIdsSize,
+                             VkDeviceSize partTriCountsSize,
+                             VkDeviceSize triOffsetsSize,
+                             Allocation&  allocation)
 {
-  vboSize         = alignedSize(vboSize, m_vboAlignment);
-  iboSize         = alignedSize(iboSize, m_alignment);
-  triangleIdsSize = alignedSize(triangleIdsSize, m_alignment);
-  partIdsSize     = alignedSize(partIdsSize, m_alignment);
+  vboSize             = alignedSize(vboSize, m_vboAlignment);
+  iboSize             = alignedSize(iboSize, m_alignment);
+  trianglePartIdsSize = alignedSize(trianglePartIdsSize, m_alignment);
+  partTriCountsSize   = alignedSize(partTriCountsSize, m_alignment);
+  triOffsetsSize      = alignedSize(triOffsetsSize, m_alignment);
 
-  if(m_chunks.empty() || getActiveChunk().vbo.info.range + vboSize > m_maxVboChunk
-     || getActiveChunk().ibo.info.range + iboSize > m_maxIboChunk || getActiveChunk().triangleIds.info.range + triangleIdsSize > m_maxIdsChunk
-     || getActiveChunk().partIds.info.range + partIdsSize > m_maxIdsChunk)
+  if(m_chunks.empty() || getActiveChunk().vbo.info.range + vboSize > m_maxVboChunk || getActiveChunk().ibo.info.range + iboSize > m_maxIboChunk
+     || getActiveChunk().trianglePartIds.info.range + trianglePartIdsSize > m_maxIdsChunk
+     || getActiveChunk().partTriCounts.info.range + partTriCountsSize > m_maxIdsChunk
+     || getActiveChunk().partTriOffsets.info.range + triOffsetsSize > m_maxTriOffsetsChunk)
   {
     finalize();
     Chunk chunk = {};
@@ -74,16 +83,18 @@ void GeometryMemoryVK::alloc(VkDeviceSize vboSize, VkDeviceSize iboSize, VkDevic
 
   Chunk& chunk = getActiveChunk();
 
-  allocation.chunkIndex        = getActiveIndex();
-  allocation.vboOffset         = chunk.vbo.info.range;
-  allocation.iboOffset         = chunk.ibo.info.range;
-  allocation.triangleIdsOffset = chunk.triangleIds.info.range;
-  allocation.partIdsOffset     = chunk.partIds.info.range;
+  allocation.chunkIndex            = getActiveIndex();
+  allocation.vboOffset             = chunk.vbo.info.range;
+  allocation.iboOffset             = chunk.ibo.info.range;
+  allocation.trianglePartIdsOffset = chunk.trianglePartIds.info.range;
+  allocation.partTriCountsOffset   = chunk.partTriCounts.info.range;
+  allocation.triOffsetsOffset      = chunk.partTriOffsets.info.range;
 
   chunk.vbo.info.range += vboSize;
   chunk.ibo.info.range += iboSize;
-  chunk.triangleIds.info.range += triangleIdsSize;
-  chunk.partIds.info.range += partIdsSize;
+  chunk.trianglePartIds.info.range += trianglePartIdsSize;
+  chunk.partTriCounts.info.range += partTriCountsSize;
+  chunk.partTriOffsets.info.range += triOffsetsSize;
 }
 
 void GeometryMemoryVK::finalize()
@@ -95,11 +106,13 @@ void GeometryMemoryVK::finalize()
 
   Chunk& chunk = getActiveChunk();
 
-  chunk.vbo         = createResBuffer(*m_resAllocator, chunk.vbo.info.range, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-  chunk.ibo         = createResBuffer(*m_resAllocator, chunk.ibo.info.range, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-  chunk.triangleIds = createResBuffer(*m_resAllocator, chunk.triangleIds.info.range, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  chunk.vbo = createResBuffer(*m_resAllocator, chunk.vbo.info.range, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  chunk.ibo = createResBuffer(*m_resAllocator, chunk.ibo.info.range, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+  chunk.trianglePartIds = createResBuffer(*m_resAllocator, chunk.trianglePartIds.info.range, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   // pad to allow graceful out-of-bounds access
-  chunk.partIds = createResBuffer(*m_resAllocator, chunk.partIds.info.range + sizeof(uint32_t) * 32, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  chunk.partTriCounts = createResBuffer(*m_resAllocator, chunk.partTriCounts.info.range + sizeof(uint32_t) * 32,
+                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  chunk.partTriOffsets = createResBuffer(*m_resAllocator, chunk.partTriOffsets.info.range, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 }
 
 void CadSceneVK::init(const CadScene& cadscene, nvvk::ResourceAllocator* resAllocator, VkQueue queue, uint32_t queueFamilyIndex)
@@ -121,7 +134,8 @@ void CadSceneVK::init(const CadScene& cadscene, nvvk::ResourceAllocator* resAllo
       const CadScene::Geometry& cadgeom = cadscene.m_geometry[g];
       Geometry&                 geom    = m_geometry[g];
 
-      m_geometryMem.alloc(cadgeom.vboSize, cadgeom.iboSize, cadgeom.triangleIdsSize, cadgeom.partIdsSize, geom.allocation);
+      m_geometryMem.alloc(cadgeom.vboSize, cadgeom.iboSize, cadgeom.trianglePartIdsSize, cadgeom.partTriCountsSize,
+                          cadgeom.partTriOffsetsSize, geom.allocation);
     }
 
     m_geometryMem.finalize();
@@ -155,26 +169,35 @@ void CadSceneVK::init(const CadScene& cadscene, nvvk::ResourceAllocator* resAllo
     geom.iboAddr    = chunk.ibo.addr + geom.allocation.iboOffset;
     staging.upload(geom.ibo, cadgeom.iboData);
 
-    geom.triangleIds.buffer = chunk.triangleIds.buffer;
-    geom.triangleIds.offset = geom.allocation.triangleIdsOffset;
-    geom.triangleIds.range  = cadgeom.triangleIdsSize;
-    geom.triangleIdsAddr    = chunk.triangleIds.addr + geom.allocation.triangleIdsOffset;
-    staging.upload(geom.triangleIds, cadgeom.triangleIdsData);
+    geom.trianglePartIds.buffer = chunk.trianglePartIds.buffer;
+    geom.trianglePartIds.offset = geom.allocation.trianglePartIdsOffset;
+    geom.trianglePartIds.range  = cadgeom.trianglePartIdsSize;
+    geom.trianglePartIdsAddr    = chunk.trianglePartIds.addr + geom.allocation.trianglePartIdsOffset;
+    staging.upload(geom.trianglePartIds, cadgeom.trianglePartIdsData);
 
-    geom.partIds.buffer = chunk.partIds.buffer;
-    geom.partIds.offset = geom.allocation.partIdsOffset;
-    geom.partIds.range  = cadgeom.partIdsSize;
-    geom.partIdsAddr    = chunk.partIds.addr + geom.allocation.partIdsOffset;
-    staging.upload(geom.partIds, cadgeom.partIdsData);
+    geom.partTriCounts.buffer = chunk.partTriCounts.buffer;
+    geom.partTriCounts.offset = geom.allocation.partTriCountsOffset;
+    geom.partTriCounts.range  = cadgeom.partTriCountsSize;
+    geom.partTriCountsAddr    = chunk.partTriCounts.addr + geom.allocation.partTriCountsOffset;
+    staging.upload(geom.partTriCounts, cadgeom.partTriCountsData);
+
+    geom.partTriOffsets.buffer = chunk.partTriOffsets.buffer;
+    geom.partTriOffsets.offset = geom.allocation.triOffsetsOffset;
+    geom.partTriOffsets.range  = cadgeom.partTriOffsetsSize;
+    geom.partTriOffsetsAddr    = chunk.partTriOffsets.addr + geom.allocation.triOffsetsOffset;
+    staging.upload(geom.partTriOffsets, cadgeom.partTriOffsetsData);
   }
 
   VkDeviceSize materialsSize = cadscene.m_materials.size() * sizeof(CadScene::Material);
   VkDeviceSize matricesSize  = cadscene.m_matrices.size() * sizeof(CadScene::MatrixNode);
 
-  m_buffers.materials = createResBuffer(*resAllocator, materialsSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  m_buffers.matrices  = createResBuffer(*resAllocator, matricesSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  m_buffers.materials =
+      createResBuffer(*resAllocator, materialsSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  m_buffers.matrices =
+      createResBuffer(*resAllocator, matricesSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
   m_buffers.matricesOrig =
-      createResBuffer(*resAllocator, matricesSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+      createResBuffer(*resAllocator, matricesSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+
 
   staging.upload(m_buffers.materials.info, cadscene.m_materials.data());
   staging.upload(m_buffers.matrices.info, cadscene.m_matrices.data());

@@ -40,22 +40,10 @@
 #endif
 
 #include "common.h"
+#include "per_draw_inputs.glsl"
 
 ///////////////////////////////////////////////////////////
 // Bindings
-
-layout(buffer_reference, buffer_reference_align=4) buffer readonly uints_in {
-  uint d[];
-};
-
-layout(push_constant, scalar) uniform pushConstants 
-{
-  // This buffer address is different depending on the renderer:
-  // USE_SEARCH == 0: array of a per-triangle partIndex
-  // USE_SEARCH != 0: array of the number of triangles per part
-
-  layout(offset=16) uints_in partIds;
-} PUSH;
 
 ///////////////////////////////////////////////////////////
 // Input/Output
@@ -74,9 +62,11 @@ layout(triangles) in;
     vec3 wNormal;
   } PASSTHROUGH[];
 
+  #ifdef USE_PUSHCONSTANTS
   layout(location=2) in Inputs2 {
     flat uint idsOffset;
   } IN_ID[];
+  #endif
   
 #else
 
@@ -88,16 +78,27 @@ layout(triangles) in;
     vec3 wNormal;
   } PASSTHROUGH[];
   
+  #ifdef USE_PUSHCONSTANTS  
   layout(location=2) in InputsID {
     flat uint idsOffset;
   } IN_ID[];
+  #endif
 
   layout(location=0) out Outputs {
     vec3 wPos;
     vec3 wNormal;
   } OUT;
-  
+
 #endif
+
+uint getIdsOffset()
+{
+#ifdef USE_PUSHCONSTANTS
+  return IN_ID[0].idsOffset;
+#else
+  return perDrawData[getDrawId()].flexible;
+#endif
+}
 
 ///////////////////////////////////////////////////////////
 
@@ -106,11 +107,15 @@ void main()
 #if SEARCH_COUNT
   // find which partIndex we are based on the gl_PrimitiveIDIn which spans
   // multiple parts.
- 
 
-  uint partOffset = IN_ID[0].idsOffset >> 8;
-  uint partCount  = IN_ID[0].idsOffset & 0xFF;
-  
+  // PUSH.idsAddr points to partTriCounts for MODE_PER_TRI_BATCH_PART_SEARCH_FS. This
+  // holds per-part triangle count.
+  uints_in partTriCounts = getIdsAddress();
+
+  // The "part" range for this draw call is  encoded in the instance ID
+  uint partOffset = getIdsOffset() >> 16;
+  uint partCount  = getIdsOffset() & 0xFFFF;
+
   int begin = 0;
   int partIndex = 0;
   
@@ -120,7 +125,7 @@ void main()
   for (int i = 0; i < SEARCH_COUNT; i++)
   {
     // don't make the load part of any condition that isn't hardcoded.
-    int partTriangleCount = int(PUSH.partIds.d[partOffset + i]);
+    int partTriangleCount = int(partTriCounts.d[partOffset + i]);
     // We unroll the full loop and test conditionally within, rather than using
     // a them the dynamic partCount in the loop condition, to optimize the code
     // generation again. We optimize for the useage that most drawcalls will max
@@ -137,13 +142,20 @@ void main()
   
 #else
 
+  // PUSH.idsAddr points to trianglePartIds for MODE_PER_TRI_ID_GS. This holds
+  // per-triangle part IDs, which can be memory/bandwidth intensive.
+  uints_in triangleIDs = getIdsAddress();
+
   // lookup each triangle's partId
   // the address of the buffer contains the partIndex per triangle
-  gl_PrimitiveID = int(PUSH.partIds.d[gl_PrimitiveIDIn + int(IN_ID[0].idsOffset)]);
+  gl_PrimitiveID = int(triangleIDs.d[gl_PrimitiveIDIn + int(getIdsOffset())]);
   
 #endif
 
 #if !USE_GEOMETRY_SHADER_PASSTHROUGH
+#ifndef USE_PUSHCONSTANTS
+  OUT_DRAWID.drawId = getDrawId();
+#endif
   [[unroll]]
   for (int i = 0; i < 3; i++) {
     gl_Position = gl_in[i].gl_Position;

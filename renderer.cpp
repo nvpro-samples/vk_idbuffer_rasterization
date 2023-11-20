@@ -23,8 +23,6 @@
 #include "renderer.hpp"
 #include <nvpwindow.hpp>
 
-#include <nvmath/nvmath_glsltypes.h>
-
 #include "common.h"
 
 #pragma pack(1)
@@ -65,7 +63,7 @@ static void FillCombined(std::vector<Renderer::DrawItem>& drawItems,
       continue;
     
     // finish old, start new
-    if (di.matrixIndex != part.matrixIndex || di.materialIndex != part.materialIndex ||
+    if (di.matrixIndex != part.matrixIndex || (!config.ignoreMaterials && di.materialIndex != part.materialIndex) ||
       di.range.offset + di.range.count * sizeof(uint32_t) != mesh.indexSolid.offset ||
       di.partCount == maxCombine)
     {
@@ -73,7 +71,7 @@ static void FillCombined(std::vector<Renderer::DrawItem>& drawItems,
 
       // new start
       di.matrixIndex   = part.matrixIndex;
-      di.materialIndex = part.materialIndex;
+      di.materialIndex = config.ignoreMaterials ? 0 : part.materialIndex;
       di.range.offset  = mesh.indexSolid.offset;
       di.partIndex     = uint32_t(p);
       di.partCount     = 0;

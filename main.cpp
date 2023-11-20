@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
+ *
  * SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,6 +26,7 @@
 #include <imgui/imgui_helper.h>
 
 #include <nvvk/appwindowprofiler_vk.hpp>
+#include <nvvk/debug_util_vk.hpp>
 
 #include <nvh/cameracontrol.hpp>
 #include <nvh/fileoperations.hpp>
@@ -34,6 +36,7 @@
 
 #include "renderer.hpp"
 #include "resources_vk.hpp"
+#include <glm/gtc/matrix_access.hpp>
 
 namespace idraster {
 int const SAMPLE_SIZE_WIDTH(1024);
@@ -45,26 +48,24 @@ class Sample : public nvvk::AppWindowProfilerVK
   enum GuiEnums
   {
     GUI_RENDERER,
+    GUI_PERDRAWMODE,
     GUI_MSAA,
   };
 
 public:
   struct Tweak
   {
-    int      renderer      = 0;
-    int      msaa          = 4;
-    int      copies        = 1;
-    uint32_t searchBatch   = 16;
-    bool     passthrough   = true;
-    bool     sorted        = false;
-    bool     animation     = false;
-    bool     animationSpin = false;
-    int      cloneaxisX    = 1;
-    int      cloneaxisY    = 1;
-    int      cloneaxisZ    = 1;
-    float    percent       = 1.001f;
-    bool     colorizeDraws = false;
-    float    partWeight    = 0.3f;
+    int              renderer      = 0;
+    int              msaa          = 4;
+    int              copies        = 1;
+    bool             animation     = false;
+    bool             animationSpin = false;
+    int              cloneaxisX    = 1;
+    int              cloneaxisY    = 1;
+    int              cloneaxisZ    = 1;
+    float            percent       = 1.001f;
+    float            partWeight    = 0.3f;
+    Renderer::Config config;
   };
 
 
@@ -73,10 +74,10 @@ public:
   ImGuiH::Registry m_ui;
   double           m_uiTime = 0;
 
-  Tweak         m_tweak;
-  Tweak         m_lastTweak;
-  bool          m_lastVsync;
-  nvmath::vec3f m_upVector = {0, 0, 1};
+  Tweak     m_tweak;
+  Tweak     m_lastTweak;
+  bool      m_lastVsync;
+  glm::vec3 m_upVector = {0, 0, 1};
 
   CadScene                  m_scene;
   std::vector<unsigned int> m_renderersSorted;
@@ -126,6 +127,10 @@ public:
 
     // validation layer bug, mismatch with geometry shader passthrough
     m_context.ignoreDebugMessage(0xb6cf33fe);
+
+    // get access to debug labels
+    m_contextInfo.addInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, false);
+    nvvk::DebugUtil::setEnabled(true);
 
 #if defined(NDEBUG)
     setVsync(false);
@@ -256,9 +261,9 @@ void Sample::initRenderer(int typesort)
       m_resources->synchronize();
       m_resources->deinit();
     }
-    m_resources          = Renderer::getRegistry()[type]->resources();
-    bool valid           = m_resources->init(&m_context, &m_swapChain, &m_profiler);
-    valid                = valid && m_resources->initFramebuffer(m_windowState.m_swapSize[0], m_windowState.m_swapSize[1], m_tweak.msaa, getVsync());
+    m_resources = Renderer::getRegistry()[type]->resources();
+    bool valid  = m_resources->init(&m_context, &m_swapChain, &m_profiler);
+    valid = valid && m_resources->initFramebuffer(m_windowState.m_swapSize[0], m_windowState.m_swapSize[1], m_tweak.msaa, getVsync());
     valid                = valid && m_resources->initPrograms(exePath(), std::string());
     valid                = valid && m_resources->initScene(m_scene);
     m_resources->m_frame = 0;
@@ -272,13 +277,10 @@ void Sample::initRenderer(int typesort)
     m_lastVsync = getVsync();
   }
 
-  Renderer::Config config;
-  config.objectFrom    = 0;
-  config.objectNum     = uint32_t(double(m_scene.m_objects.size()) * double(m_tweak.percent));
-  config.sorted        = m_tweak.sorted;
-  config.searchBatch   = m_tweak.searchBatch;
-  config.colorizeDraws = m_tweak.colorizeDraws;
-  config.passthrough = m_context.hasDeviceExtension(VK_NV_GEOMETRY_SHADER_PASSTHROUGH_EXTENSION_NAME) && m_tweak.passthrough;
+  Renderer::Config config{m_tweak.config};
+  config.objectFrom = 0;
+  config.objectNum  = uint32_t(double(m_scene.m_objects.size()) * double(m_tweak.percent));
+  config.passthrough = m_tweak.config.passthrough && m_context.hasDeviceExtension(VK_NV_GEOMETRY_SHADER_PASSTHROUGH_EXTENSION_NAME);
 
   m_renderStats = Renderer::Stats();
 
@@ -365,22 +367,27 @@ bool Sample::begin()
       m_ui.enumAdd(GUI_RENDERER, int(i), registry[m_renderersSorted[i]]->name());
     }
 
+    m_ui.enumAdd(GUI_PERDRAWMODE, Renderer::PER_DRAW_PUSHCONSTANTS, "Use Pushconstants");
+    m_ui.enumAdd(GUI_PERDRAWMODE, Renderer::PER_DRAW_INDEX_BASEINSTANCE, "Use gl_BaseInstance & MDI");
+    m_ui.enumAdd(GUI_PERDRAWMODE, Renderer::PER_DRAW_INDEX_ATTRIBUTE, "Use Instanced Attribute & MDI");
+
     m_ui.enumAdd(GUI_MSAA, 0, "none");
     m_ui.enumAdd(GUI_MSAA, 2, "2x");
     m_ui.enumAdd(GUI_MSAA, 4, "4x");
     m_ui.enumAdd(GUI_MSAA, 8, "8x");
   }
 
-  m_control.m_sceneOrbit     = nvmath::vec3f(m_scene.m_bbox.max + m_scene.m_bbox.min) * 0.5f;
-  m_control.m_sceneDimension = nvmath::length((m_scene.m_bbox.max - m_scene.m_bbox.min));
-  m_control.m_viewMatrix = nvmath::look_at(m_control.m_sceneOrbit - (-vec3(1, 1, 1) * m_control.m_sceneDimension * 0.5f),
-                                           m_control.m_sceneOrbit, m_upVector);
+  m_control.m_sceneOrbit     = glm::vec3(m_scene.m_bbox.max + m_scene.m_bbox.min) * 0.5f;
+  m_control.m_sceneDimension = glm::length((m_scene.m_bbox.max - m_scene.m_bbox.min));
+  m_control.m_viewMatrix = glm::lookAt(m_control.m_sceneOrbit - (-vec3(1, 1, 1) * m_control.m_sceneDimension * 0.5f),
+                                       m_control.m_sceneOrbit, m_upVector);
 
   m_shared.animUbo.sceneCenter    = m_control.m_sceneOrbit;
   m_shared.animUbo.sceneDimension = m_control.m_sceneDimension * 0.2f;
   m_shared.animUbo.numMatrices    = uint(m_scene.m_matrices.size());
   m_shared.sceneUbo.wLightPos     = (m_scene.m_bbox.max + m_scene.m_bbox.min) * 0.5f + m_control.m_sceneDimension;
   m_shared.sceneUbo.wLightPos.w   = 1.0;
+
 
   initRenderer(m_tweak.renderer);
 
@@ -400,27 +407,42 @@ void Sample::processUI(int width, int height, double time)
   m_uiTime = time;
 
   ImGui::NewFrame();
-  ImGui::SetNextWindowSize(ImGuiH::dpiScaled(380, 0), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImGuiH::dpiScaled(440, 0), ImGuiCond_FirstUseEver);
   if(ImGui::Begin("NVIDIA " PROJECT_NAME, nullptr))
   {
     m_ui.enumCombobox(GUI_RENDERER, "renderer", &m_tweak.renderer);
+    m_ui.enumCombobox(GUI_PERDRAWMODE, "per draw parameters", &m_tweak.config.perDrawParameterMode);
 
     if(m_context.hasDeviceExtension(VK_NV_GEOMETRY_SHADER_PASSTHROUGH_EXTENSION_NAME))
     {
-      ImGui::Checkbox("use geometry shader passthrough", &m_tweak.passthrough);
+      ImGui::Checkbox("use geometry shader passthrough", &m_tweak.config.passthrough);
     }
-    ImGuiH::InputIntClamped("search batch", &m_tweak.searchBatch, 4, 32, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGuiH::InputIntClamped("search batch", &m_tweak.config.searchBatch, 4, 32, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::Separator();
     ImGui::SliderFloat("part color weight", &m_tweak.partWeight, 0.0f, 1.00f);
-    ImGui::Checkbox("colorize drawcalls", &m_tweak.colorizeDraws);
+    ImGui::Checkbox("colorize drawcalls", &m_tweak.config.colorizeDraws);
+    ImGui::Checkbox("ignore materials", &m_tweak.config.ignoreMaterials);
     ImGui::Separator();
     ImGuiH::InputIntClamped("model copies", &m_tweak.copies, 1, 16, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SliderFloat("pct visible", &m_tweak.percent, 0.0f, 1.001f);
     ImGui::Separator();
     //m_ui.enumCombobox(GUI_MSAA, "msaa", &m_tweak.msaa);
-    ImGui::Checkbox("sorted once (minimized state changes)", &m_tweak.sorted);
+    ImGui::Checkbox("sorted once (minimized state changes)", &m_tweak.config.sorted);
     ImGui::Checkbox("animation", &m_tweak.animation);
     ImGui::Separator();
+
+    // MODE_PER_TRI_GLOBAL_PART_SEARCH_FS settings
+    std::string rendererName(Renderer::getRegistry()[m_renderersSorted[m_tweak.renderer]]->name());
+    if(rendererName == "per-tri global search part index fs")
+    {
+      ImGui::Checkbox("global search initial guess", &m_tweak.config.globalSearchGuess);
+      ImGuiH::InputIntClamped("global search N-ary N", &m_tweak.config.globalNaryN, 3, 16, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGuiH::InputIntClamped("global search N-ary fallback at", &m_tweak.config.globalNaryMin,
+                              m_tweak.config.globalNaryN + 1, 10000, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGuiH::InputIntClamped("global search N-ary max iter", &m_tweak.config.globalNaryMaxIter, 0, 32, 1, 1,
+                              ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGui::Separator();
+    }
 
     {
       int avg = 50;
@@ -470,8 +492,8 @@ void Sample::processUI(int width, int height, double time)
 
       //ImGui::ProgressBar(cpuTimeF / maxTimeF, ImVec2(0.0f, 0.0f));
       ImGui::Separator();
-      ImGui::Text(" triangle ids:  %9ld KB\n", m_scene.m_triangleIdsSize / 1024);
-      ImGui::Text(" part ids:      %9ld KB\n", m_scene.m_partIdsSize / 1024);
+      ImGui::Text(" triangle ids:  %9ld KB\n", m_scene.m_trianglePartIdsSize / 1024);
+      ImGui::Text(" part ids:      %9ld KB\n", m_scene.m_partTriCountsSize / 1024);
       ImGui::Text(" draw calls:    %9d\n", m_renderStats.drawCalls);
       ImGui::Text(" draw tris:     %9d\n", m_renderStats.drawTriangles);
     }
@@ -489,8 +511,8 @@ void Sample::think(double time)
     processUI(width, height, time);
   }
 
-  m_control.processActions(m_windowState.m_winSize,
-                           nvmath::vec2f(m_windowState.m_mouseCurrent[0], m_windowState.m_mouseCurrent[1]),
+  m_control.processActions({m_windowState.m_winSize[0], m_windowState.m_winSize[1]},
+                           glm::vec2(m_windowState.m_mouseCurrent[0], m_windowState.m_mouseCurrent[1]),
                            m_windowState.m_mouseButtonFlags, m_windowState.m_mouseWheel);
 
   bool shadersChanged = false;
@@ -521,9 +543,12 @@ void Sample::think(double time)
     m_resources->initScene(m_scene);
   }
 
-  if(shadersChanged || sceneChanged || tweakChanged(m_tweak.renderer) || tweakChanged(m_tweak.sorted)
-     || tweakChanged(m_tweak.percent) || tweakChanged(m_tweak.passthrough) || tweakChanged(m_tweak.searchBatch)
-     || tweakChanged(m_tweak.colorizeDraws))
+  if(shadersChanged || sceneChanged || tweakChanged(m_tweak.renderer) || tweakChanged(m_tweak.config.sorted)
+     || tweakChanged(m_tweak.percent) || tweakChanged(m_tweak.config.passthrough)
+     || tweakChanged(m_tweak.config.searchBatch) || tweakChanged(m_tweak.config.colorizeDraws)
+     || tweakChanged(m_tweak.config.ignoreMaterials) || tweakChanged(m_tweak.config.globalSearchGuess)
+     || tweakChanged(m_tweak.config.globalNaryN) || tweakChanged(m_tweak.config.globalNaryMin)
+     || tweakChanged(m_tweak.config.globalNaryMaxIter) || tweakChanged(m_tweak.config.perDrawParameterMode))
   {
     m_resources->synchronize();
     initRenderer(m_tweak.renderer);
@@ -547,32 +572,33 @@ void Sample::think(double time)
 
     sceneUbo.viewport = ivec2(width, height);
 
-    nvmath::mat4 projection = nvmath::perspectiveVK((45.f), float(width) / float(height), m_control.m_sceneDimension * 0.001f,
-                                                    m_control.m_sceneDimension * 10.0f);
-    nvmath::mat4 view       = m_control.m_viewMatrix;
+    glm::mat4 projection = glm::perspectiveRH_ZO(glm::radians(45.f), float(width) / float(height),
+                                            m_control.m_sceneDimension * 0.001f, m_control.m_sceneDimension * 10.0f);
+    projection[1][1] *= -1;
+    glm::mat4 view = m_control.m_viewMatrix;
 
     if(m_tweak.animation && m_tweak.animationSpin)
     {
-      double animTime = (time - m_animBeginTime) * 0.3 + nv_pi * 0.2;
+      double animTime = (time - m_animBeginTime) * 0.3 + glm::pi<float>() * 0.2;
       vec3   dir      = vec3(cos(animTime), 1, sin(animTime));
-      view            = nvmath::look_at(m_control.m_sceneOrbit - (-dir * m_control.m_sceneDimension * 0.5f),
-                             m_control.m_sceneOrbit, vec3(0, 1, 0));
+      view = glm::lookAt(m_control.m_sceneOrbit - (-dir * m_control.m_sceneDimension * 0.5f), m_control.m_sceneOrbit,
+                         vec3(0, 1, 0));
     }
 
     sceneUbo.viewProjMatrix = projection * view;
     sceneUbo.viewMatrix     = view;
-    sceneUbo.viewMatrixIT   = nvmath::transpose(nvmath::invert(view));
+    sceneUbo.viewMatrixIT   = glm::transpose(glm::inverse(view));
 
-    sceneUbo.viewPos = sceneUbo.viewMatrixIT.row(3);
-    sceneUbo.viewDir = -view.row(2);
+    sceneUbo.viewPos = glm::row(sceneUbo.viewMatrixIT, 3);
+    sceneUbo.viewDir = -glm::row(view, 2);
 
-    sceneUbo.wLightPos   = sceneUbo.viewMatrixIT.row(3);
+    sceneUbo.wLightPos   = glm::row(sceneUbo.viewMatrixIT, 3);
     sceneUbo.wLightPos.w = 1.0;
 
-    sceneUbo.time = float(time);
+    sceneUbo.time       = float(time);
     sceneUbo.partWeight = m_tweak.partWeight;
 
-    sceneUbo.mousePos = nvmath::vec2i(m_windowState.m_mouseCurrent[0], m_windowState.m_mouseCurrent[1]);
+    sceneUbo.mousePos = glm::ivec2(m_windowState.m_mouseCurrent[0], m_windowState.m_mouseCurrent[1]);
   }
 
   if(m_tweak.animation)
@@ -648,7 +674,7 @@ void Sample::setupConfigParameters()
   m_parameterList.add("copies", &m_tweak.copies);
   m_parameterList.add("animation", &m_tweak.animation);
   m_parameterList.add("animationspin", &m_tweak.animationSpin);
-  m_parameterList.add("minstatechanges", &m_tweak.sorted);
+  m_parameterList.add("minstatechanges", &m_tweak.config.sorted);
 }
 
 bool Sample::validateConfig()

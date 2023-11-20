@@ -28,6 +28,7 @@
 #extension GL_EXT_shader_atomic_int64 : enable
 
 #include "common.h"
+#include "per_draw_inputs.glsl"
 
 ///////////////////////////////////////////////////////////
 // Bindings
@@ -44,12 +45,6 @@ layout(set=0, binding=DRAW_SSBO_MATERIAL, scalar) buffer materialBuffer {
 layout(set=0, binding=DRAW_SSBO_RAY, scalar) buffer coherent rayBuffer {
   RayData   ray;
 };
-
-layout(push_constant, scalar) uniform pushConstants {
-  layout(offset=8)
-  uint     materialIdx;
-  uint     uniquePartOffset;
-} PUSH;
 
 ///////////////////////////////////////////////////////////
 // Input
@@ -75,5 +70,6 @@ layout(location=0,index=0) out vec4 out_Color;
 
 void main()
 {
+  //out_Color = unpackUnorm4x8(murmurHash(getDrawId()));
   out_Color = shading(IN.partIndex);
 }
