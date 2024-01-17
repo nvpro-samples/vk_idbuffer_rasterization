@@ -1,4 +1,7 @@
 #ifndef USE_PUSHCONSTANTS
+// When not using pish constants, we use a single large SSBO to provide the
+// per-draw data, indexed by the only per-draw parameter that we can specify with
+// each draw call, the 'firstInstance' parameter
 layout(set = 0, binding = DRAW_SSBO_PER_DRAW, scalar) buffer perDrawBuffer
 {
   DrawPushData perDrawData[];
@@ -12,12 +15,15 @@ layout(push_constant, scalar) uniform pushConstants
 
 #ifdef _VERTEX_SHADER_
 #ifdef USE_ATTRIB_BASEINSTANCE
-in   layout(location = ATTRIB_BASEINSTANCE) uint inBaseInstance;
+// Use an intanced vertex attribute to 'emulate' gl_BaseInstance
+in   layout(location = ATTRIB_BASEINSTANCE) uint InBaseInstance;
 uint getBaseInstance()
 {
-  return inBaseInstance;
+  return InBaseInstance;
 }
 #else
+// We use  gl_InstanceIndex here instead of gl_BaseInstance as in
+// the non-instanced case, gl_InstanceIndex == gl_BaseIndex
 uint getBaseInstance()
 {
   return gl_InstanceIndex;
@@ -27,16 +33,22 @@ uint getBaseInstance()
 
 #ifdef _VERTEX_SHADER_
 #ifndef USE_PUSHCONSTANTS
+// When not using push constants, we need to forward the draw ID to the next
+// shader stages, so they can access 'perDrawBuffer'. The alternative would be
+// to make the vertex shader read out all of the per-draw parameters and let
+// it forward all of them to the next stage. But this is very wasteful and
+// impacts performance, in particular if the next stage(s) don't make use of all
+// parameters.
 layout(location = 3) out DrawId
 {
   flat uint drawId;
 }
 OUT_DRAWID;
-#endif  // USE_PUSHCONSTANTS
 uint getDrawId()
 {
   return getBaseInstance();
 }
+#endif  // USE_PUSHCONSTANTS
 #endif  //_VERTEX_SHADER_
 
 #if _FRAGMENT_SHADER_
@@ -59,7 +71,7 @@ uint getDrawId();
 #ifdef _GEOMETRY_SHADER_
 #ifndef USE_PUSHCONSTANTS
 #if USE_GEOMETRY_SHADER_PASSTHROUGH
-layout(passthrough, location = 3) in DrawId
+layout(passthrough, location = 3) in InDrawId
 {
   flat uint drawId;
 }
@@ -82,12 +94,12 @@ uint getDrawId()
   return IN_DRAWID[0].drawId;
 };
 #else   // USE_PUSHCONSTANTS
-uint getDrawId();
+uint getDrawId(); // declared, but not defined
 #endif  // USE_PUSHCONSTANTS
 #endif  //_GEOMETRY_SHADER_
 
 #ifdef _COMPUTE_SHADER_
-uint getDrawId();
+uint getDrawId(); // declared, but not defined
 #endif  // _COMPUTE_SHADER_
 
 

@@ -13,7 +13,7 @@ Another use-case for idbuffers / item buffers containing unique part IDs is scre
 
 One issue we face is that, while an object might have many triangles in whole, when it's made of many such parts, they tend to have few triangles each. Therefore, rendering the parts individually does not allow GPUs to run at full performance, even when we remove the CPU-bottlenecks from such small drawcalls, the GPU can become front-end bound on the GPU, as the front-end is responsible for creating the drawcalls.
 
-A modern GPU tends to be wide, that means it has lots of execution units that prefer big work loads, so a drawcall with just a few triangles (less than 500) tends to not be able to sature the hardware quick enough. While the hardware is able to process multiple drawcalls in parallel, there tend to be limits on how much can run in parallel, and also if the work per-draw is small the setup/overhead of each draw just can bite us in the end.
+A modern GPU tends to be wide, that means it has lots of execution units that prefer big work loads, so a drawcall with just a few triangles (less than 500) tends to not be able to saturate the hardware quick enough. While the hardware is able to process multiple drawcalls in parallel, there tend to be limits on how much can run in parallel, and also if the work per-draw is small the setup/overhead of each draw just can bite us in the end.
 
 Sometimes it's not avoidable to have objects with few drawcalls, ideally those get not drawn in bulk, but interleaved with objects that have more triangles so we can hide this problem better.
 
@@ -22,6 +22,7 @@ In this sample we showcase a few rendering techniques to get a per-part ID withi
 Typical UI operations:
 
 - `renderer` change between different techniques to render the part IDs
+- `per-draw parameters` alter the way per-draw parameters are passed and how drawcalls are submitted.
 - `use geometry shader passthrough` affects renderers with the `gs` suffix and makes use of the `GL_NV_geometry_shader_passthrough` if supported
 - `search batch` the number of parts per drawcall to batch in the `search` renderers.
 - `part color weight` slider allows to blend between the individual part colors and the material color
@@ -125,7 +126,7 @@ Using the geometry-shader version is typically slower than the fragement-shader,
 
 ### **per-triangle search part index**
 
-In this technqiue we try to lower the memory footprint of the previous technique. Before we had one partID per triangle, but what if we just store how many triangles each part stores and then figure out which part we are. 
+In this technique we try to lower the memory footprint of the previous technique. Before we had one partID per triangle, but what if we just store how many triangles each part stores and then figure out which part we are. 
 
 This means we only need the number of triangles each part has, which is a lot less memory (see `part ids` in UI), as it no longer depends on the actual number of triangles.
 
@@ -184,6 +185,110 @@ In our sample a value of 16 worked well.
   }
 ```
 
+### Passing per draw information
+The sample implements different code paths to pass per-draw information, which can be switched between using the `per-draw parameters` UI option.
+Especially at very high frequencies (low number of triangles/work per draw) the approaches can make a difference.
+
+The [`per_draw_inputs.glsl`](per_draw_inputs.glsl) file does wrap these different methods.
+
+#### Push Constants
+When selecting `pushconstants` in the UI, the sample will supply per-draw
+parameters to the GPU via via Vulkan's 'Push Constants'. These are comparable to
+'Uniforms' in OpenGL. Push Constants provide a convenient way to provide shaders
+with data that changes dynamically between draw calls. Traditionally this data
+might be things like the ModelViewProjection matrix and material or lighting
+parameters. Unlike updates to descriptor sets, push constant data updates are
+embedded into the command buffer. This way no additional synchronization or 
+cache management is needed, which makes push constants a very easy way to handle.
+The downside to push constants is the additional overhead - they should not
+be used to update a lot of parameters for each draw call. Our code sample attempts
+to minimize the number of push constant updates by making only updates to
+parameters that changed between draw calls.
+
+#### Multi-Draw Indirect and gl_BaseInstance
+As the previous techniques sometimes rely on passing some information efficiently
+per draw, let's look at different possibilities. The UI option 
+`MDI & gl_BaseInstance` offers a path that is using _Multi-Draw-Indirect_ to
+issue draw calls and a technique based around 'gl_BaseInstance' to pass per-draw
+parameters to the shader(s).
+
+Multi-Draw-Indirect (MDI) offers a way in Vulkan to submit many draws at once
+with just one command, `vkCmdDraw[Indexed]Indirect`, thereby potentially
+increasing performance considerably. With `vkCmdDraw[Indexed]Indirect`, the
+per-draw parameters that are typically provided as function parameters to
+`vkCmdDrawIndexed` like number of indices, first vertex, base instance etc.
+need to be provided in an "Indirect Buffer" filled with
+`VkDrawIndexedIndirectCommand` objects that describe the individual draws to
+the GPU. We do loose one important feature, though: the ability to change state
+inbetween these draws - in particular changes to the push constants. All draws
+executed as part of an MDI drawcall share the same state. Therefore we need to
+find a different way to pass the required transform matrix, material ID, part
+identifier etc to the shaders. Currently, the only way in core Vulkan to 
+communicate a per-draw identifier is to use the 
+`VkDraw[Indexed]IndirectCommand::firstInstance` member. 
+This parameter is passed through to the vertex shader as `gl_BaseInstance` 
+(available in GLSL 4.6) and has no effect on rendering if instancing is not
+used. Since our sample is not using instancing we are free to use this 
+parameter to pass a user defined ID along to the vertex shader. When the draws
+do not actually make use of instancing, gl_InstanceID can be used synonymously 
+to gl_BaseInstance which may work better on some hardware. Using gl_BaseInstance,
+the shader can identify which part the current draw belongs to and use it to do
+a lookup into a storage buffer containing the actual draw parameters needed
+for the current draw. In our sample's case, we keep a storage buffer containing
+an array of `DrawPushData` around that we index with gl_InstanceID.
+
+```
+struct DrawPushData
+{
+  // Common to all vertex shaders
+  uint matrixIndex;
+
+  uint flexible;
+
+  // Simple per-part fragment push constants for MODE_PER_DRAW_BASEINST
+  uint materialIndex;
+
+  // Added to the part ID when shading() so the same ID for different objects is
+  // a different color.
+  uint uniquePartOffset;
+
+  // Address bound contains different content per mode:
+  // - MODE_PER_TRI_ID*: trianglePartIds - per-triangle part IDs
+  // - MODE_PER_TRI_*BATCH_PART_SEARCH*: partTriCounts - per-part triangle counts
+  // - MODE_PER_TRI_*GLOBAL_PART_SEARCH*: partTriOffsets - running per-part triangle offsets
+  BUFFER_REFERENCE(uints_in, idsAddr);
+};
+```
+It provides the vertex shader with the transform matrix, the fragment shader with
+the material index and means to identify the object the currently drawn triangle
+belongs to with the algorithms described prior.
+
+Notice that we don't pass these parameters individually as varyings (in/out parameters)
+between shader stages. Instead, the vertex shader only passes the current draw ID along in
+a flat varying. This is done to minimize passing data between the shader stages. Saving
+on inter-stage data in turn saves on-chip memory and thus allows for better utilization of
+the GPU, in particular for large model rendering, when the the number of rendered primitives
+reaches and surpasses the amount of pixels on screen.
+
+Each shader stage that needs per-draw information from the per-draw buffer does its own
+lookup. This lookup will be highly uniform and thus cause the data to be kept in L1/L2
+cache with high likelyhood.
+
+While passing the data as individual varyings is possible, it increases the amount of
+on-chip memory each output vertex needs. This increased usage negatively impacts
+occupancy, meaning less vertex-shader threads can be run in parallel.
+
+#### Multi-Draw Indirect and instanced vertex attribute
+Via the `MDI & instanced attribute` option in UI choses a renderer path which replaces the use of
+gl_BaseInstance shader built-in through an instanced vertex attribute.
+
+On some hardware it is faster to emulate gl_BaseInstance via an instanced vertex attribute
+by providing a buffer which contains the draw index in the shape of `buffer[x] = x`.
+When binding this buffer as instanced vertex attribute, this vertex attribute will then
+provide the gl_BaseInstance identifier indirectly. Once the draw ID is fetched from the
+instanced vertex attribute, the remaining handling of per-draw parameters remains the same
+as the _MDI & gl_BaseInstance_ option.
+
 ### Performance
 
 Summarizing our three main techniques:
@@ -211,7 +316,7 @@ abcdefghi
 abcd efgh i
 ```
 
-Results for a NVIDIA GeForce 3080 and `model copies = 3` with 1440p + 4x msaa and `search batch = 16`
+Results for a NVIDIA GeForce 3080 and `model copies = 3` with 1440p + 4x msaa and `search batch = 16` and `pushconstants`.
 
 | renderer                                      | drawcalls | time in milliseconds |
 |-----------------------------------------------|-----------|----------------------|

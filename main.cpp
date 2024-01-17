@@ -367,9 +367,9 @@ bool Sample::begin()
       m_ui.enumAdd(GUI_RENDERER, int(i), registry[m_renderersSorted[i]]->name());
     }
 
-    m_ui.enumAdd(GUI_PERDRAWMODE, Renderer::PER_DRAW_PUSHCONSTANTS, "Use Pushconstants");
-    m_ui.enumAdd(GUI_PERDRAWMODE, Renderer::PER_DRAW_INDEX_BASEINSTANCE, "Use gl_BaseInstance & MDI");
-    m_ui.enumAdd(GUI_PERDRAWMODE, Renderer::PER_DRAW_INDEX_ATTRIBUTE, "Use Instanced Attribute & MDI");
+    m_ui.enumAdd(GUI_PERDRAWMODE, Renderer::PER_DRAW_PUSHCONSTANTS, "pushconstants");
+    m_ui.enumAdd(GUI_PERDRAWMODE, Renderer::PER_DRAW_INDEX_BASEINSTANCE, "MDI & gl_BaseInstance");
+    m_ui.enumAdd(GUI_PERDRAWMODE, Renderer::PER_DRAW_INDEX_ATTRIBUTE, "MDI & instanced attribute");
 
     m_ui.enumAdd(GUI_MSAA, 0, "none");
     m_ui.enumAdd(GUI_MSAA, 2, "2x");
@@ -408,16 +408,35 @@ void Sample::processUI(int width, int height, double time)
 
   ImGui::NewFrame();
   ImGui::SetNextWindowSize(ImGuiH::dpiScaled(440, 0), ImGuiCond_FirstUseEver);
+  
   if(ImGui::Begin("NVIDIA " PROJECT_NAME, nullptr))
   {
+    ImGui::PushItemWidth(ImGuiH::dpiScaled(280));
+
     m_ui.enumCombobox(GUI_RENDERER, "renderer", &m_tweak.renderer);
-    m_ui.enumCombobox(GUI_PERDRAWMODE, "per draw parameters", &m_tweak.config.perDrawParameterMode);
+    m_ui.enumCombobox(GUI_PERDRAWMODE, "per-draw parameters", &m_tweak.config.perDrawParameterMode);
 
     if(m_context.hasDeviceExtension(VK_NV_GEOMETRY_SHADER_PASSTHROUGH_EXTENSION_NAME))
     {
       ImGui::Checkbox("use geometry shader passthrough", &m_tweak.config.passthrough);
     }
-    ImGuiH::InputIntClamped("search batch", &m_tweak.config.searchBatch, 4, 32, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
+    if (ImGui::CollapsingHeader("search parameters"))
+    {
+      ImGui::PushItemWidth(ImGuiH::dpiScaled(170));
+      ImGui::Indent( ImGuiH::dpiScaled(24) );
+      ImGui::Text("local search:");
+      ImGuiH::InputIntClamped("search batch", &m_tweak.config.searchBatch, 4, 32, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGui::Separator();
+      ImGui::Text("global search:");
+      ImGui::Checkbox("initial guess", &m_tweak.config.globalSearchGuess);
+      ImGuiH::InputIntClamped("N-ary N", &m_tweak.config.globalNaryN, 3, 16, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGuiH::InputIntClamped("N-ary fallback at", &m_tweak.config.globalNaryMin, m_tweak.config.globalNaryN + 1, 10000,
+                              1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGuiH::InputIntClamped("N-ary max iter", &m_tweak.config.globalNaryMaxIter, 0, 32, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGui::PopItemWidth();
+      ImGui::Unindent( ImGuiH::dpiScaled(24) );
+    }
+
     ImGui::Separator();
     ImGui::SliderFloat("part color weight", &m_tweak.partWeight, 0.0f, 1.00f);
     ImGui::Checkbox("colorize drawcalls", &m_tweak.config.colorizeDraws);
@@ -430,19 +449,7 @@ void Sample::processUI(int width, int height, double time)
     ImGui::Checkbox("sorted once (minimized state changes)", &m_tweak.config.sorted);
     ImGui::Checkbox("animation", &m_tweak.animation);
     ImGui::Separator();
-
-    // MODE_PER_TRI_GLOBAL_PART_SEARCH_FS settings
-    std::string rendererName(Renderer::getRegistry()[m_renderersSorted[m_tweak.renderer]]->name());
-    if(rendererName == "per-tri global search part index fs")
-    {
-      ImGui::Checkbox("global search initial guess", &m_tweak.config.globalSearchGuess);
-      ImGuiH::InputIntClamped("global search N-ary N", &m_tweak.config.globalNaryN, 3, 16, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
-      ImGuiH::InputIntClamped("global search N-ary fallback at", &m_tweak.config.globalNaryMin,
-                              m_tweak.config.globalNaryN + 1, 10000, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
-      ImGuiH::InputIntClamped("global search N-ary max iter", &m_tweak.config.globalNaryMaxIter, 0, 32, 1, 1,
-                              ImGuiInputTextFlags_EnterReturnsTrue);
-      ImGui::Separator();
-    }
+    ImGui::PopItemWidth();
 
     {
       int avg = 50;

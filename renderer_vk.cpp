@@ -369,9 +369,10 @@ private:
     VkBuffer lastIbo          = VK_NULL_HANDLE;
 
     uint32_t numBufferBinds = 0;
-    uint32_t numMDIDraws   = 0;
-    VkDeviceSize mdiBufferOffset = 0;
-    VkDeviceSize startMdiBufferOffset = 0;
+
+    uint32_t     numMDIDraws     = 0;  // keep track of the number of draws in the current MDI batch
+    VkDeviceSize mdiBufferOffset = 0;  // keep track of the offset for the next VkDrawIndexedIndirectCommand
+    VkDeviceSize startMdiBufferOffset = 0;  // keep track of the start offset of the current MDI batch inside m_indirectDrawBuffer
 
     nvvk::DebugUtil::ScopedCmdLabel dbgLabel(cmd, "fillCmdBufferPerDrawBuffer");
 
@@ -389,6 +390,7 @@ private:
       vkUpdateDescriptorSets(device, updateDescriptors.size(), updateDescriptors.data(), 0, 0);
     }
 
+    // m_indirectDrawBuffer stores the MDI draw calls in the form of VkDrawIndexedIndirectCommand
     m_indirectDrawBuffer = m_resources->createBuffer(sizeof(VkDrawIndexedIndirectCommand) * drawCount,
                                                      VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     assert(m_indirectDrawBuffer.buffer);
@@ -400,30 +402,33 @@ private:
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_setup.pipeline);
 
     {
+      // This is an optional buffer, "emulating" gl_BaseInstance, which can be faster on some hardware
+      // setupPipeline() set this vertex buffer up to be indexed by the instance ID
       VkDeviceSize offset = 0;
       vkCmdBindVertexBuffers(cmd, BINDING_PER_INSTANCE, 1, &m_perDrawIndexBuffer.buffer, &offset);
     }
 
-    auto flushMDIDraws = [&]()
-    {
-        if (numMDIDraws)
-        {
-            vkCmdDrawIndexedIndirect(cmd, m_indirectDrawBuffer.buffer, startMdiBufferOffset, numMDIDraws, sizeof(VkDrawIndexedIndirectCommand));
-            startMdiBufferOffset = mdiBufferOffset;
-            numMDIDraws = 0;
-        }
+    // Issue an actual draw call whenever we need to crossh vertex/index buffer boundaries
+    auto flushMDIDraws = [&]() {
+      if(numMDIDraws)
+      {
+        vkCmdDrawIndexedIndirect(cmd, m_indirectDrawBuffer.buffer, startMdiBufferOffset, numMDIDraws,
+                                 sizeof(VkDrawIndexedIndirectCommand));
+        startMdiBufferOffset = mdiBufferOffset;
+        numMDIDraws          = 0;
+      }
     };
 
 
-    std::vector<DrawPushData> perDrawData(drawCount);
+    std::vector<DrawPushData>                 perDrawData(drawCount);
     std::vector<VkDrawIndexedIndirectCommand> indirectDraws;
 
-    for(size_t idx = 0; idx < drawCount; idx++)
+    for(size_t drawId = 0; drawId < drawCount; drawId++)
     {
-      const DrawItem&             di       = drawItems[idx];
+      const DrawItem&             di       = drawItems[drawId];
       const CadSceneVK::Geometry& geo      = scene.m_geometry[di.geometryIndex];
-      DrawPushData&               drawData = perDrawData[idx];
-      drawData.flexible                        = idx;
+      DrawPushData&               drawData = perDrawData[drawId];
+      drawData.flexible                    = drawId;
 
       assert(geo.ibo.offset % sizeof(uint32_t) == 0);
       uint32_t drawIndicesOffset = uint32_t(geo.ibo.offset + di.range.offset) / sizeof(uint32_t);
@@ -431,10 +436,10 @@ private:
 
       if(lastGeometry != di.geometryIndex)
       {
-        flushMDIDraws();
-
         if(geo.vbo.buffer != lastVbo)
         {
+          flushMDIDraws();
+
           lastVbo             = geo.vbo.buffer;
           VkDeviceSize offset = 0;
           vkCmdBindVertexBuffers(cmd, BINDING_PER_VERTEX, 1, &geo.vbo.buffer, &offset);
@@ -442,6 +447,8 @@ private:
         }
         if(geo.ibo.buffer != lastIbo)
         {
+          flushMDIDraws();
+
           lastIbo = geo.ibo.buffer;
           vkCmdBindIndexBuffer(cmd, geo.ibo.buffer, 0, VK_INDEX_TYPE_UINT32);
           ++numBufferBinds;
@@ -475,7 +482,7 @@ private:
       int materialIndex = di.materialIndex;
       if(m_config.colorizeDraws)
       {
-        materialIndex = int(idx);
+        materialIndex = int(drawId);
       }
       drawData.materialIndex = materialIndex;
 
@@ -490,7 +497,6 @@ private:
         case RendererVK::MODE_PER_TRI_ID_GS:
         case RendererVK::MODE_PER_TRI_ID_FS:
           // the partIndex is encoded per triangle in the idsBuffer
-          // instanceIndex will encode the offset into the per-triangle idsBuffer, / 3 because 3 indices per triangle.
           drawData.flexible = (uint32_t(di.range.offset) / sizeof(uint32_t)) / 3;
           break;
         case RendererVK::MODE_PER_TRI_BATCH_PART_SEARCH_GS:
@@ -511,9 +517,9 @@ private:
       uint vertexOffset = geo.vbo.offset / sizeof(CadScene::Vertex);
 
       {
-          VkDrawIndexedIndirectCommand cmd{ drawIndicesCount , 1, drawIndicesOffset , vertexOffset, idx};
-          indirectDraws.push_back(cmd);
-          mdiBufferOffset += sizeof(VkDrawIndexedIndirectCommand);
+        VkDrawIndexedIndirectCommand cmd{drawIndicesCount, 1, drawIndicesOffset, (int32_t)vertexOffset, (uint32_t)drawId};
+        indirectDraws.push_back(cmd);
+        mdiBufferOffset += sizeof(VkDrawIndexedIndirectCommand);
       }
 
       ++numMDIDraws;
@@ -521,15 +527,16 @@ private:
 
     flushMDIDraws();
 
-    // now that we know how many and in what order the drawcalls happen, set up the per-drawcall buffer
     {
-        ResourcesVK* res = m_resources;
-        ScopeStaging staging(res->m_allocator, res->m_queue, res->m_queueFamily);
-        staging.upload({ m_perDrawDataBuffer.buffer, 0, drawCount * sizeof(DrawPushData) }, perDrawData.data());
-        staging.upload({ m_indirectDrawBuffer.buffer, 0, drawCount * sizeof(VkDrawIndexedIndirectCommand) }, indirectDraws.data());
-        staging.submit();
+      ResourcesVK* res = m_resources;
+      ScopeStaging staging(res->m_allocator, res->m_queue, res->m_queueFamily);
+      // now that we know how many and in what order the drawcalls happen, set up the per-drawcall buffer
+      staging.upload({m_perDrawDataBuffer.buffer, 0, drawCount * sizeof(DrawPushData)}, perDrawData.data());
+      // also upload the indirect draw data
+      staging.upload({m_indirectDrawBuffer.buffer, 0, drawCount * sizeof(VkDrawIndexedIndirectCommand)}, indirectDraws.data());
+      staging.submit();
+      // ScopeStaging will wait for the uploads to finish when going out of scope
     }
-
 
     LOGSTATS("buffer binds: %u, drawcalls: %u \n", numBufferBinds, numMDIDraws);
   }
@@ -627,6 +634,9 @@ bool RendererVK::init(const CadScene* NV_RESTRICT scene, Resources* resources, c
       case Renderer::PER_DRAW_INDEX_ATTRIBUTE:
         prepend += nvh::stringFormat("#define USE_ATTRIB_BASEINSTANCE\n");
         break;
+      case Renderer::PER_DRAW_INDEX_BASEINSTANCE:
+        // nothing to do
+        break;
     }
 
     // init shaders
@@ -695,37 +705,6 @@ bool RendererVK::init(const CadScene* NV_RESTRICT scene, Resources* resources, c
 
     if(config.perDrawParameterMode == Renderer::PER_DRAW_PUSHCONSTANTS)
     {
-#if 0
-        rangeCount = 2;  // VS + FS ranges
-
-      // Vertex shader push constants - just DrawPushData::matrixIndex
-      ranges[0] = makePushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, DrawPushData, matrixIndex, idsAddr);
-
-
-      // Fragment shader push constants
-      switch(m_mode)
-      {
-        case RendererVK::MODE_PER_DRAW_BASEINST:
-        case RendererVK::MODE_PER_TRI_ID_GS:
-        case RendererVK::MODE_PER_TRI_BATCH_PART_SEARCH_GS:
-          ranges[1] = makePushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, DrawPushData, matrixIndex, idsAddr);
-          break;
-        case RendererVK::MODE_PER_TRI_ID_FS:
-        case RendererVK::MODE_PER_TRI_BATCH_PART_SEARCH_FS:
-        case RendererVK::MODE_PER_TRI_GLOBAL_PART_SEARCH_FS:
-          ranges[1] = makePushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, DrawPushData, matrixIndex, idsAddr);
-          break;
-        default:
-          assert(0);
-      }
-
-      // Geometry shader variants only need DrawPushData::idsAddr and have their own range
-      if(m_mode == RendererVK::MODE_PER_TRI_ID_GS || m_mode == RendererVK::MODE_PER_TRI_BATCH_PART_SEARCH_GS)
-      {
-        ranges[2]  = makePushConstantRange(VK_SHADER_STAGE_GEOMETRY_BIT, DrawPushData, matrixIndex, idsAddr);
-        rangeCount = 3;
-      }
-#endif
       ranges[0] = makePushConstantRange(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_GEOMETRY_BIT,
                                         DrawPushData, matrixIndex, idsAddr);
       rangeCount = 1;

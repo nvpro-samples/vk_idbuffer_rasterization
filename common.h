@@ -134,6 +134,7 @@ struct DrawPushData
   // Common to all vertex shaders
   uint matrixIndex;
 
+  // Depending on the technique, this can be a different identifier, offset etc.
   uint flexible;
 
   // Simple per-part fragment push constants for MODE_PER_DRAW_BASEINST
