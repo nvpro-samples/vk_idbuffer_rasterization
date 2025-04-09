@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2025 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
-
-
-/* Contact ckubisch@nvidia.com (Christoph Kubisch) for feedback */
 
 
 #include <algorithm>
@@ -33,7 +30,7 @@
 
 #include "common.h"
 
-#include <numeric> // std::iota
+#include <numeric>  // std::iota
 
 namespace idraster {
 
@@ -543,19 +540,19 @@ private:
 
 
   void setupCmdBuffer(const DrawItem* NV_RESTRICT drawItems, size_t drawCount)
-  { 
+  {
     ResourcesVK* res = m_resources;
 
     VkCommandBuffer cmd = res->createCmdBuffer(m_cmdPool, false, false, true);
     res->cmdDynamicState(cmd);
 
-    if (m_config.perDrawParameterMode == Renderer::PER_DRAW_PUSHCONSTANTS)
+    if(m_config.perDrawParameterMode == Renderer::PER_DRAW_PUSHCONSTANTS)
     {
-        fillCmdBuffer(cmd, drawItems, drawCount);
+      fillCmdBuffer(cmd, drawItems, drawCount);
     }
     else
     {
-        fillCmdBufferPerDrawBuffer(cmd, drawItems, drawCount);
+      fillCmdBufferPerDrawBuffer(cmd, drawItems, drawCount);
     }
 
     vkEndCommandBuffer(cmd);
@@ -575,12 +572,12 @@ private:
       nvvk::GraphicsPipelineState     state = res->m_gfxState;
       nvvk::GraphicsPipelineGenerator gen(state);
 
-      if (needsBaseInstanceBuffer)
+      if(needsBaseInstanceBuffer)
       {
-          state.addAttributeDescription(nvvk::GraphicsPipelineState::makeVertexInputAttribute(ATTRIB_BASEINSTANCE, BINDING_PER_INSTANCE,
-              VK_FORMAT_R32_UINT, 0));
-          state.addBindingDescription(nvvk::GraphicsPipelineState::makeVertexInputBinding(BINDING_PER_INSTANCE, sizeof(uint32_t),
-              VK_VERTEX_INPUT_RATE_INSTANCE));
+        state.addAttributeDescription(nvvk::GraphicsPipelineState::makeVertexInputAttribute(ATTRIB_BASEINSTANCE, BINDING_PER_INSTANCE,
+                                                                                            VK_FORMAT_R32_UINT, 0));
+        state.addBindingDescription(nvvk::GraphicsPipelineState::makeVertexInputBinding(BINDING_PER_INSTANCE, sizeof(uint32_t),
+                                                                                        VK_VERTEX_INPUT_RATE_INSTANCE));
       }
 
       gen.setRenderPass(res->m_framebuffer.passPreserve);
@@ -666,9 +663,7 @@ bool RendererVK::init(const CadScene* NV_RESTRICT scene, Resources* resources, c
             res->m_shaderManager.createShaderModule(VK_SHADER_STAGE_FRAGMENT_BIT, "drawid_primid_gs.frag.glsl", prepend);
         m_setup.geometryShader = res->m_shaderManager.createShaderModule(
             VK_SHADER_STAGE_GEOMETRY_BIT, "drawid_primid_gs.geo.glsl",
-            nvh::stringFormat("#define USE_GEOMETRY_SHADER_PASSTHROUGH %d\n", config.passthrough ? 1 : 0)
-                + nvh::stringFormat("#define SEARCH_COUNT %d\n", m_mode == MODE_PER_TRI_BATCH_PART_SEARCH_GS ? config.searchBatch : 0)
-                + prepend);
+            nvh::stringFormat("#define SEARCH_COUNT %d\n", m_mode == MODE_PER_TRI_BATCH_PART_SEARCH_GS ? config.searchBatch : 0) + prepend);
         m_setup.vertexShader =
             res->m_shaderManager.createShaderModule(VK_SHADER_STAGE_VERTEX_BIT, "drawid_primid_gs.vert.glsl", prepend);
         break;
@@ -767,7 +762,7 @@ bool RendererVK::init(const CadScene* NV_RESTRICT scene, Resources* resources, c
       {
         perDrawIndices[x] = x;
       }
-      
+
       m_perDrawIndexBuffer = m_resources->createBufferT(perDrawIndices.data(), perDrawIndices.size(),
                                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                                         staging.getCmd());
@@ -776,8 +771,6 @@ bool RendererVK::init(const CadScene* NV_RESTRICT scene, Resources* resources, c
 
 
     setupCmdBuffer(m_drawItems.data(), m_drawItems.size());
-
-
   }
 
   m_draw.fboChangeID  = res->m_fboChangeID;
@@ -827,7 +820,7 @@ void RendererVK::draw(const Resources::Global& global, Stats& stats)
       vkCmdUpdateBuffer(primary, res->m_common.view.buffer, 0, sizeof(SceneData), (const uint32_t*)&global.sceneUbo);
       // reset the buffer used for picking so that atomicMin would give us the lowest value
       vkCmdFillBuffer(primary, res->m_common.ray.buffer, 0, sizeof(RayData), ~0);
-      
+
       res->cmdPipelineBarrier(primary);
 
       // render scene
@@ -838,7 +831,7 @@ void RendererVK::draw(const Resources::Global& global, Stats& stats)
       // copy the mouse-picking hit result from this frame
       // into the main ubo, so that we can use the result
       // for the next frame
-      
+
       VkMemoryBarrier memBarrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
       memBarrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
       memBarrier.dstAccessMask   = VK_ACCESS_TRANSFER_READ_BIT;

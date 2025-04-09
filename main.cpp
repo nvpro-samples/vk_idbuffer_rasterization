@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,10 @@
  * limitations under the License.
  *
  *
- * SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2025 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
-/* Contact ckubisch@nvidia.com (Christoph Kubisch) for feedback */
 
 #define DEBUG_FILTER 1
 
@@ -120,13 +118,9 @@ public:
       : AppWindowProfilerVK(false)
   {
     setupConfigParameters();
-    m_contextInfo.addDeviceExtension(VK_NV_GEOMETRY_SHADER_PASSTHROUGH_EXTENSION_NAME, true);
 
     m_contextInfo.apiMajor = 1;
-    m_contextInfo.apiMinor = 2;
-
-    // validation layer bug, mismatch with geometry shader passthrough
-    m_context.ignoreDebugMessage(0xb6cf33fe);
+    m_contextInfo.apiMinor = 3;
 
     // get access to debug labels
     m_contextInfo.addInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, false);
@@ -280,7 +274,6 @@ void Sample::initRenderer(int typesort)
   Renderer::Config config{m_tweak.config};
   config.objectFrom = 0;
   config.objectNum  = uint32_t(double(m_scene.m_objects.size()) * double(m_tweak.percent));
-  config.passthrough = m_tweak.config.passthrough && m_context.hasDeviceExtension(VK_NV_GEOMETRY_SHADER_PASSTHROUGH_EXTENSION_NAME);
 
   m_renderStats = Renderer::Stats();
 
@@ -408,7 +401,7 @@ void Sample::processUI(int width, int height, double time)
 
   ImGui::NewFrame();
   ImGui::SetNextWindowSize(ImGuiH::dpiScaled(440, 0), ImGuiCond_FirstUseEver);
-  
+
   if(ImGui::Begin("NVIDIA " PROJECT_NAME, nullptr))
   {
     ImGui::PushItemWidth(ImGuiH::dpiScaled(280));
@@ -416,14 +409,10 @@ void Sample::processUI(int width, int height, double time)
     m_ui.enumCombobox(GUI_RENDERER, "renderer", &m_tweak.renderer);
     m_ui.enumCombobox(GUI_PERDRAWMODE, "per-draw parameters", &m_tweak.config.perDrawParameterMode);
 
-    if(m_context.hasDeviceExtension(VK_NV_GEOMETRY_SHADER_PASSTHROUGH_EXTENSION_NAME))
-    {
-      ImGui::Checkbox("use geometry shader passthrough", &m_tweak.config.passthrough);
-    }
-    if (ImGui::CollapsingHeader("search parameters"))
+    if(ImGui::CollapsingHeader("search parameters"))
     {
       ImGui::PushItemWidth(ImGuiH::dpiScaled(170));
-      ImGui::Indent( ImGuiH::dpiScaled(24) );
+      ImGui::Indent(ImGuiH::dpiScaled(24));
       ImGui::Text("local search:");
       ImGuiH::InputIntClamped("search batch", &m_tweak.config.searchBatch, 4, 32, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
       ImGui::Separator();
@@ -434,7 +423,7 @@ void Sample::processUI(int width, int height, double time)
                               1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
       ImGuiH::InputIntClamped("N-ary max iter", &m_tweak.config.globalNaryMaxIter, 0, 32, 1, 1, ImGuiInputTextFlags_EnterReturnsTrue);
       ImGui::PopItemWidth();
-      ImGui::Unindent( ImGuiH::dpiScaled(24) );
+      ImGui::Unindent(ImGuiH::dpiScaled(24));
     }
 
     ImGui::Separator();
@@ -551,8 +540,7 @@ void Sample::think(double time)
   }
 
   if(shadersChanged || sceneChanged || tweakChanged(m_tweak.renderer) || tweakChanged(m_tweak.config.sorted)
-     || tweakChanged(m_tweak.percent) || tweakChanged(m_tweak.config.passthrough)
-     || tweakChanged(m_tweak.config.searchBatch) || tweakChanged(m_tweak.config.colorizeDraws)
+     || tweakChanged(m_tweak.percent) || tweakChanged(m_tweak.config.searchBatch) || tweakChanged(m_tweak.config.colorizeDraws)
      || tweakChanged(m_tweak.config.ignoreMaterials) || tweakChanged(m_tweak.config.globalSearchGuess)
      || tweakChanged(m_tweak.config.globalNaryN) || tweakChanged(m_tweak.config.globalNaryMin)
      || tweakChanged(m_tweak.config.globalNaryMaxIter) || tweakChanged(m_tweak.config.perDrawParameterMode))
@@ -580,7 +568,7 @@ void Sample::think(double time)
     sceneUbo.viewport = ivec2(width, height);
 
     glm::mat4 projection = glm::perspectiveRH_ZO(glm::radians(45.f), float(width) / float(height),
-                                            m_control.m_sceneDimension * 0.001f, m_control.m_sceneDimension * 10.0f);
+                                                 m_control.m_sceneDimension * 0.001f, m_control.m_sceneDimension * 10.0f);
     projection[1][1] *= -1;
     glm::mat4 view = m_control.m_viewMatrix;
 

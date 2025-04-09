@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2025 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -27,16 +27,8 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 #extension GL_EXT_control_flow_attributes : enable
 
-#ifndef USE_GEOMETRY_SHADER_PASSTHROUGH
-#define USE_GEOMETRY_SHADER_PASSTHROUGH 1
-#endif
-
 #ifndef SEARCH_COUNT
 #define SEARCH_COUNT 8
-#endif
-
-#if USE_GEOMETRY_SHADER_PASSTHROUGH
-#extension GL_NV_geometry_shader_passthrough : require
 #endif
 
 #include "common.h"
@@ -50,46 +42,24 @@
 
 layout(triangles) in;
 
-#if USE_GEOMETRY_SHADER_PASSTHROUGH
+layout(triangle_strip) out;
+layout(max_vertices=3) out;
 
-  // Declare "Inputs" with "passthrough" to automatically copy members.
-  layout(passthrough) in gl_PerVertex {
-    vec4 gl_Position;
-  } gl_in[];
-
-  layout(passthrough,location=0) in Inputs {
-    vec3 wPos;
-    vec3 wNormal;
-  } PASSTHROUGH[];
-
-  #ifdef USE_PUSHCONSTANTS
-  layout(location=2) in Inputs2 {
-    flat uint idsOffset;
-  } IN_ID[];
-  #endif
+layout(location=0) in Inputs {
+  vec3 wPos;
+  vec3 wNormal;
+} PASSTHROUGH[];
   
-#else
-
-  layout(triangle_strip) out;
-  layout(max_vertices=3) out;
-
-  layout(location=0) in Inputs {
-    vec3 wPos;
-    vec3 wNormal;
-  } PASSTHROUGH[];
-  
-  #ifdef USE_PUSHCONSTANTS  
-  layout(location=2) in InputsID {
-    flat uint idsOffset;
-  } IN_ID[];
-  #endif
-
-  layout(location=0) out Outputs {
-    vec3 wPos;
-    vec3 wNormal;
-  } OUT;
-
+#ifdef USE_PUSHCONSTANTS  
+layout(location=2) in InputsID {
+  flat uint idsOffset;
+} IN_ID[];
 #endif
+
+layout(location=0) out Outputs {
+  vec3 wPos;
+  vec3 wNormal;
+} OUT;
 
 uint getIdsOffset()
 {
@@ -152,7 +122,6 @@ void main()
   
 #endif
 
-#if !USE_GEOMETRY_SHADER_PASSTHROUGH
 #ifndef USE_PUSHCONSTANTS
   OUT_DRAWID.drawId = getDrawId();
 #endif
@@ -163,5 +132,4 @@ void main()
     OUT.wNormal = PASSTHROUGH[i].wNormal;
     EmitVertex();
   }
-#endif
 }

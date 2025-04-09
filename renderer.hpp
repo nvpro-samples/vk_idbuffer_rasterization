@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2025 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -32,8 +32,7 @@ namespace idraster {
 class Renderer
 {
 public:
-
-    enum PerDrawIndexMode
+  enum PerDrawIndexMode
   {
     PER_DRAW_PUSHCONSTANTS,
     PER_DRAW_INDEX_BASEINSTANCE,
@@ -51,10 +50,9 @@ public:
     uint32_t objectFrom;
     uint32_t objectNum;
     bool     sorted          = true;
-    bool     passthrough     = true;
     bool     colorizeDraws   = false;
     bool     ignoreMaterials = false;
-    uint32_t searchBatch = 16;
+    uint32_t searchBatch     = 16;
 
     // MODE_PER_TRI_GLOBAL_PART_SEARCH_FS settings
     int  globalNaryN       = 4;

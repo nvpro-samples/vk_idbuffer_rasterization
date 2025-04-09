@@ -1,3 +1,22 @@
+/*
+* Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*
+* SPDX-FileCopyrightText: Copyright (c) 2023-2025 NVIDIA CORPORATION
+* SPDX-License-Identifier: Apache-2.0
+*/
+
 #ifndef USE_PUSHCONSTANTS
 // When not using pish constants, we use a single large SSBO to provide the
 // per-draw data, indexed by the only per-draw parameter that we can specify with
@@ -70,13 +89,6 @@ uint getDrawId();
 
 #ifdef _GEOMETRY_SHADER_
 #ifndef USE_PUSHCONSTANTS
-#if USE_GEOMETRY_SHADER_PASSTHROUGH
-layout(passthrough, location = 3) in InDrawId
-{
-  flat uint drawId;
-}
-IN_DRAWID[];
-#else // USE_GEOMETRY_SHADER_PASSTHROUGH
 layout(location = 3) in InDrawId
 {
   flat uint drawId;
@@ -87,8 +99,6 @@ layout(location = 3) out OutDrawId
   flat uint drawId;
 }
 OUT_DRAWID;
-#endif // USE_GEOMETRY_SHADER_PASSTHROUGH
-
 uint getDrawId()
 {
   return IN_DRAWID[0].drawId;

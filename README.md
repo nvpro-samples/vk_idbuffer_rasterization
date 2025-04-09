@@ -23,7 +23,6 @@ Typical UI operations:
 
 - `renderer` change between different techniques to render the part IDs
 - `per-draw parameters` alter the way per-draw parameters are passed and how drawcalls are submitted.
-- `use geometry shader passthrough` affects renderers with the `gs` suffix and makes use of the `GL_NV_geometry_shader_passthrough` if supported
 - `search batch` the number of parts per drawcall to batch in the `search` renderers.
 - `part color weight` slider allows to blend between the individual part colors and the material color
 - `colorize drawcalls` when active overrides the object's material color with a per-draw color (useful to show the batching)
@@ -119,8 +118,6 @@ The easiest and often fastest option to do this lookup is inside the fragment-sh
 
 Another alternative is using a geometry-shader and compute a new gl_PrimitiveID passed to the fragment shader. The renderers with the `gs` perform the lookup in the geometry-shader stage:
 - [drawid_primid_gs.geo.glsl](drawid_primid_gs.geo.glsl). 
-
-Because our geoemtry-shader is only computing per-triangle values and not changing vertices, we can use the `GL_NV_geometry_shader_passthrough` extension to further accelerate it. You can see the impact of the performance you get by disabling the option in the UI.
 
 Using the geometry-shader version is typically slower than the fragement-shader, and we also do the operation/fetching prior early depth culling. So we don't recommend using the geometry-shader technique either.
 
@@ -322,16 +319,12 @@ Results for a NVIDIA GeForce 3080 and `model copies = 3` with 1440p + 4x msaa an
 |-----------------------------------------------|-----------|----------------------|
 | per-draw part index                           |   296 049 |               12.2   |
 | per-triangle part index fs                    |     6 777 |              **2.3** |
-| per-triangle part index gs passthrough        |     6 777 |                2.4   |
 | per-triangle part index gs                    |     6 777 |                4.3   |
 | per-triangle search part index fs             |    22 260 |                2.5   |
-| per-triangle search part index gs passthrough |    22 260 |                2.6   |
 | per-triangle search part index gs             |    22 260 |                4.6   |
 
 We can see that the per-drawcall part index clearly is the worst option for this model, as it contains of lots of parts with few triangles.
 As mentioned before the easiest plug-in solution is typically having a per-triangle buffer.
-
-The passthrough geometry shader variants are relatively close in this sample, but one really shouldn't use a regular geometry shader.
 
 For the single car the `triangle partID buffer` was around 9 MB (32-bit per triangle) and the `partID buffer` used for searches just 268 KB (32-bit per part). So if you are tight on memory the `per-triangle search fs` method may be good choice.
 
