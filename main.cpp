@@ -67,7 +67,8 @@ public:
   };
 
 
-  bool m_useUI = true;
+  bool m_useUI         = true;
+  bool m_forceValidate = false;
 
   ImGuiH::Registry m_ui;
   double           m_uiTime = 0;
@@ -660,6 +661,7 @@ void Sample::setupConfigParameters()
   m_parameterList.addFilename(".gltf", &m_modelFilename);
 
   m_parameterList.add("vkdevice", &m_contextInfo.compatibleDeviceIndex);
+  m_parameterList.add("validate", &m_forceValidate, true);
 
   m_parameterList.add("noui", &m_useUI, false);
 
@@ -681,6 +683,14 @@ bool Sample::validateConfig()
     m_parameterList.print();
     return false;
   }
+#ifndef NDEBUG
+#else
+  if(m_forceValidate)
+  {
+    m_contextInfo.instanceLayers.push_back({"VK_LAYER_KHRONOS_validation", true});
+  }
+#endif
+
   return true;
 }
 
